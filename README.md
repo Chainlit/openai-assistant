@@ -1,6 +1,7 @@
 # OpenAI Assistant
 
 You can deploy your OpenAI assistant with Chainlit using this template.
+![openai-assistant](https://github.com/Chainlit/openai-assistant/assets/13104895/5c095a89-e426-417e-977d-772c4d4974c2)
 
 ### Supported Assistant Features
 
