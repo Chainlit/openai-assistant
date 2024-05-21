@@ -12,7 +12,6 @@ services:
         sync: false
       - key: LITERAL_API_KEY
         sync: false
-        optional: true
     region: frankfurt
     buildCommand: pip install -r requirements.txt
     startCommand: chainlit run app.py -h --port $PORT

@@ -3,16 +3,23 @@ from io import BytesIO
 from pathlib import Path
 from typing import List
 
-from openai import AsyncAssistantEventHandler, AsyncOpenAI
+from openai import AsyncAssistantEventHandler, AsyncOpenAI, OpenAI
 
 from literalai.helper import utc_now
 
 import chainlit as cl
+from chainlit.config import config
 from chainlit.element import Element
 
 
-client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+async_openai_client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+sync_openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
+assistant = sync_openai_client.beta.assistants.retrieve(
+    os.environ.get("OPENAI_ASSISTANT_ID")
+)
+
+config.ui.name = assistant.name
 
 class EventHandler(AsyncAssistantEventHandler):
 
@@ -72,7 +79,7 @@ class EventHandler(AsyncAssistantEventHandler):
 
     async def on_image_file_done(self, image_file):
         image_id = image_file.file_id
-        response = await client.files.with_raw_response.content(image_id)
+        response = await async_openai_client.files.with_raw_response.content(image_id)
         image_element = cl.Image(
             name=image_id,
             content=response.content,
@@ -87,7 +94,7 @@ class EventHandler(AsyncAssistantEventHandler):
 
 @cl.step(type="tool")
 async def speech_to_text(audio_file):
-    response = await client.audio.transcriptions.create(
+    response = await async_openai_client.audio.transcriptions.create(
         model="whisper-1", file=audio_file
     )
 
@@ -97,7 +104,7 @@ async def speech_to_text(audio_file):
 async def upload_files(files: List[Element]):
     file_ids = []
     for file in files:
-        uploaded_file = await client.files.create(
+        uploaded_file = await async_openai_client.files.create(
             file=Path(file.path), purpose="assistants"
         )
         file_ids.append(uploaded_file.id)
@@ -121,29 +128,22 @@ async def process_files(files: List[Element]):
 
 @cl.on_chat_start
 async def start_chat():
-    # Create an Assistant
-    assistant = await client.beta.assistants.retrieve(
-        os.environ.get("OPENAI_ASSISTANT_ID")
-    )
-
-    # Store assistant in user session for later use
-    cl.user_session.set("assistant", assistant)
-
     # Create a Thread
-    thread = await client.beta.threads.create()
+    thread = await async_openai_client.beta.threads.create()
     # Store thread ID in user session for later use
     cl.user_session.set("thread_id", thread.id)
+    await cl.Avatar(name=assistant.name, path="./public/logo.png").send()
+    await cl.Message(content=f"Hello, I'm {assistant.name}!", disable_feedback=True).send()
     
 
 @cl.on_message
 async def main(message: cl.Message):
-    assistant = cl.user_session.get("assistant")
     thread_id = cl.user_session.get("thread_id")
 
     attachments = await process_files(message.elements)
 
     # Add a Message to the Thread
-    oai_message = await client.beta.threads.messages.create(
+    oai_message = await async_openai_client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
         content=message.content,
@@ -151,7 +151,7 @@ async def main(message: cl.Message):
     )
 
     # Create and Stream a Run
-    async with client.beta.threads.runs.stream(
+    async with async_openai_client.beta.threads.runs.stream(
         thread_id=thread_id,
         assistant_id=assistant.id,
         event_handler=EventHandler(assistant_name=assistant.name),
