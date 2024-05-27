@@ -10,6 +10,7 @@ from literalai.helper import utc_now
 import chainlit as cl
 from chainlit.config import config
 from chainlit.element import Element
+from openai.types.beta.threads.runs import RunStep
 
 
 async_openai_client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -30,6 +31,9 @@ class EventHandler(AsyncAssistantEventHandler):
         self.current_tool_call = None
         self.assistant_name = assistant_name
 
+    async def on_run_step_created(self, run_step: RunStep) -> None:
+        cl.user_session.set("run_step", run_step)
+
     async def on_text_created(self, text) -> None:
         self.current_message = await cl.Message(author=self.assistant_name, content="").send()
 
@@ -43,7 +47,7 @@ class EventHandler(AsyncAssistantEventHandler):
         self.current_tool_call = tool_call.id
         self.current_step = cl.Step(name=tool_call.type, type="tool")
         self.current_step.language = "python"
-        self.current_step.created_at = utc_now()
+        self.current_step.start = utc_now()
         await self.current_step.send()
 
     async def on_tool_call_delta(self, delta, snapshot): 
@@ -72,6 +76,13 @@ class EventHandler(AsyncAssistantEventHandler):
                 if delta.code_interpreter.input:
                     await self.current_step.stream_token(delta.code_interpreter.input)
 
+
+    async def on_event(self, event) -> None:
+        if event.event == "error":
+            return cl.ErrorMessage(content=str(event.data.message)).send()
+
+    async def on_exception(self, exception: Exception) -> None:
+        return cl.ErrorMessage(content=str(exception)).send()
 
     async def on_tool_call_done(self, tool_call):
         self.current_step.end = utc_now()
@@ -126,15 +137,47 @@ async def process_files(files: List[Element]):
     ]
 
 
+@cl.set_starters
+async def set_starters():
+    return [
+        cl.Starter(
+            label="Morning routine ideation",
+            message="Can you help me create a personalized morning routine that would help increase my productivity throughout the day? Start by asking me about my current habits and what activities energize me in the morning.",
+            icon="/public/idea.svg",
+            ),
+
+        cl.Starter(
+            label="Explain superconductors",
+            message="Explain superconductors like I'm five years old.",
+            icon="/public/learn.svg",
+            ),
+        cl.Starter(
+            label="Python script for daily email reports",
+            message="Write a script to automate sending daily email reports in Python, and walk me through how I would set it up.",
+            icon="/public/terminal.svg",
+            ), 
+        cl.Starter(
+            label="Text inviting friend to wedding",
+            message="Write a text asking a friend to be my plus-one at a wedding next month. I want to keep it super short and casual, and offer an out.",
+            icon="/public/write.svg",
+            ), 
+        
+        ]
+
 @cl.on_chat_start
 async def start_chat():
     # Create a Thread
     thread = await async_openai_client.beta.threads.create()
     # Store thread ID in user session for later use
     cl.user_session.set("thread_id", thread.id)
-    await cl.Avatar(name=assistant.name, path="./public/logo.png").send()
-    await cl.Message(content=f"Hello, I'm {assistant.name}!", disable_feedback=True).send()
     
+    
+@cl.on_stop
+async def stop_chat():
+    current_run_step: RunStep = cl.user_session.get("run_step")
+    if current_run_step:
+        await async_openai_client.beta.threads.runs.cancel(run_id=current_run_step.run_id)
+
 
 @cl.on_message
 async def main(message: cl.Message):
@@ -185,7 +228,6 @@ async def on_audio_end(elements: list[Element]):
         mime=audio_mime_type, content=audio_file, name=audio_buffer.name
     )
     await cl.Message(
-        author="You",
         type="user_message",
         content="",
         elements=[input_audio_el, *elements],
