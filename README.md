@@ -8,6 +8,10 @@ You can deploy your OpenAI assistant with Chainlit using this template.
 | --------- | ----- | ---------------- | ----------- | ----- |
 | ✅        | ✅    | ✅               | ✅          | ✅    |
 
+
+https://github.com/Chainlit/openai-assistant/assets/13104895/2d2b5e0a-c121-4ccc-9596-6cbbca6d5b1c
+
+
 ### Get an OpenAI API key
 
 Go to OpenAI's [API keys page](https://platform.openai.com/api-keys) and create one if you don't have one already.
